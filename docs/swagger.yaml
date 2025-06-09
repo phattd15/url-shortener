@@ -1,0 +1,161 @@
+basePath: /
+definitions:
+  models.ShortenRequest:
+    properties:
+      expires_in:
+        description: in days, optional
+        type: integer
+      url:
+        type: string
+    required:
+    - url
+    type: object
+  models.ShortenResponse:
+    properties:
+      expires_at:
+        type: string
+      original_url:
+        type: string
+      short_code:
+        type: string
+      short_url:
+        type: string
+    type: object
+  models.StatsResponse:
+    properties:
+      click_count:
+        type: integer
+      created_at:
+        type: string
+      expires_at:
+        type: string
+      original_url:
+        type: string
+      short_code:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: A simple URL shortener service built with Go and Gin
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  termsOfService: http://swagger.io/terms/
+  title: URL Shortener API
+  version: "1.0"
+paths:
+  /{shortCode}:
+    get:
+      description: Redirect to the original URL using the short code and increment
+        click count
+      parameters:
+      - description: Short code
+        in: path
+        name: shortCode
+        required: true
+        type: string
+      responses:
+        "301":
+          description: Redirects to original URL
+        "404":
+          description: Short URL not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "410":
+          description: Short URL has expired
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Redirect to original URL
+      tags:
+      - URL Shortener
+  /health:
+    get:
+      description: Check if the service is healthy and running
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - System
+  /shorten:
+    post:
+      consumes:
+      - application/json
+      description: Create a short URL from a long URL with optional expiration
+      parameters:
+      - description: URL to shorten
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.ShortenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: URL already exists
+          schema:
+            $ref: '#/definitions/models.ShortenResponse'
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.ShortenResponse'
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create a short URL
+      tags:
+      - URL Shortener
+  /stats/{shortCode}:
+    get:
+      description: Get statistics for a shortened URL including click count and creation
+        date
+      parameters:
+      - description: Short code
+        in: path
+        name: shortCode
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.StatsResponse'
+        "404":
+          description: Short URL not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get URL statistics
+      tags:
+      - URL Shortener
+schemes:
+- http
+- https
+swagger: "2.0"
