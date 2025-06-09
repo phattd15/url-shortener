@@ -1,0 +1,147 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-master-config
+  namespace: url-shortener
+data:
+  POSTGRES_DB: urlshortener
+  POSTGRES_USER: postgres
+  POSTGRES_REPLICATION_USER: replicator
+  POSTGRES_REPLICATION_MODE: master
+  POSTGRES_REPLICATION_USER_PASSWORD: replicator_password
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-master-secret
+  namespace: url-shortener
+type: Opaque
+data:
+  POSTGRES_PASSWORD: cGFzc3dvcmQ= # base64 encoded "password"
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-master
+  namespace: url-shortener
+spec:
+  serviceName: postgres-master
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres-master
+  template:
+    metadata:
+      labels:
+        app: postgres-master
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:15
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: postgres-master-config
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: postgres-master-config
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-master-secret
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_REPLICATION_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: postgres-master-config
+              key: POSTGRES_REPLICATION_MODE
+        - name: POSTGRES_REPLICATION_USER
+          valueFrom:
+            configMapKeyRef:
+              name: postgres-master-config
+              key: POSTGRES_REPLICATION_USER
+        - name: POSTGRES_REPLICATION_USER_PASSWORD
+          valueFrom:
+            configMapKeyRef:
+              name: postgres-master-config
+              key: POSTGRES_REPLICATION_USER_PASSWORD
+        volumeMounts:
+        - name: postgres-master-storage
+          mountPath: /var/lib/postgresql/data
+        - name: postgres-config
+          mountPath: /etc/postgresql/postgresql.conf
+          subPath: postgresql.conf
+        - name: postgres-config
+          mountPath: /etc/postgresql/pg_hba.conf
+          subPath: pg_hba.conf
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U "postgres" -h 127.0.0.1 -p 5432
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U "postgres" -h 127.0.0.1 -p 5432
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 1
+      volumes:
+      - name: postgres-config
+        configMap:
+          name: postgres-master-config-files
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-master-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-master-config-files
+  namespace: url-shortener
+data:
+  postgresql.conf: |
+    listen_addresses = '*'
+    wal_level = replica
+    max_wal_senders = 3
+    wal_keep_segments = 64
+    archive_mode = on
+    archive_command = '/bin/true'
+    hot_standby = on
+  pg_hba.conf: |
+    local   all             all                                     trust
+    host    all             all             127.0.0.1/32            trust
+    host    all             all             ::1/128                 trust
+    host    all             all             0.0.0.0/0               md5
+    host    replication     replicator      0.0.0.0/0               md5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-master
+  namespace: url-shortener
+spec:
+  selector:
+    app: postgres-master
+  ports:
+  - port: 5432
+    targetPort: 5432
+  type: ClusterIP 

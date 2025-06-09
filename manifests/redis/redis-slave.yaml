@@ -1,0 +1,134 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-slave-config
+  namespace: url-shortener
+data:
+  redis.conf: |
+    bind 0.0.0.0
+    port 6379
+    tcp-backlog 511
+    timeout 0
+    tcp-keepalive 300
+    daemonize no
+    supervised no
+    pidfile /var/run/redis_6379.pid
+    loglevel notice
+    logfile ""
+    databases 16
+    always-show-logo yes
+    slaveof redis-master 6379
+    slave-serve-stale-data yes
+    slave-read-only yes
+    repl-diskless-sync no
+    repl-diskless-sync-delay 5
+    repl-ping-slave-period 10
+    repl-timeout 60
+    repl-disable-tcp-nodelay no
+    repl-backlog-size 1mb
+    repl-backlog-ttl 3600
+    slave-priority 100
+    maxmemory-policy allkeys-lru
+    lazyfree-lazy-eviction no
+    lazyfree-lazy-expire no
+    lazyfree-lazy-server-del no
+    slave-lazy-flush no
+    appendonly no
+    lua-time-limit 5000
+    slowlog-log-slower-than 10000
+    slowlog-max-len 128
+    latency-monitor-threshold 0
+    notify-keyspace-events ""
+    hash-max-ziplist-entries 512
+    hash-max-ziplist-value 64
+    list-max-ziplist-size -2
+    list-compress-depth 0
+    set-max-intset-entries 512
+    zset-max-ziplist-entries 128
+    zset-max-ziplist-value 64
+    hll-sparse-max-bytes 3000
+    activerehashing yes
+    client-output-buffer-limit normal 0 0 0
+    client-output-buffer-limit slave 256mb 64mb 60
+    client-output-buffer-limit pubsub 32mb 8mb 60
+    hz 10
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-slave
+  namespace: url-shortener
+spec:
+  serviceName: redis-slave
+  replicas: 2
+  selector:
+    matchLabels:
+      app: redis-slave
+  template:
+    metadata:
+      labels:
+        app: redis-slave
+        role: slave
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+          name: redis
+        command:
+        - redis-server
+        - /etc/redis/redis.conf
+        volumeMounts:
+        - name: redis-slave-storage
+          mountPath: /data
+        - name: redis-config
+          mountPath: /etc/redis
+        livenessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 1
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: redis-config
+        configMap:
+          name: redis-slave-config
+  volumeClaimTemplates:
+  - metadata:
+      name: redis-slave-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-slave
+  namespace: url-shortener
+spec:
+  selector:
+    app: redis-slave
+  ports:
+  - port: 6379
+    targetPort: 6379
+  type: ClusterIP 

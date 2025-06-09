@@ -1,0 +1,153 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: url-shortener-config
+  namespace: url-shortener
+data:
+  DB_HOST: "postgres-master"
+  DB_PORT: "5432"
+  DB_USER: "postgres"
+  DB_NAME: "urlshortener"
+  REDIS_ADDR: "redis-master:6379"
+  REDIS_PASSWORD: ""
+  REDIS_DB: "0"
+  PORT: "8080"
+  GIN_MODE: "release"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: url-shortener-secret
+  namespace: url-shortener
+type: Opaque
+data:
+  DB_PASSWORD: cGFzc3dvcmQ= # base64 encoded "password"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: url-shortener
+  namespace: url-shortener
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: url-shortener
+  template:
+    metadata:
+      labels:
+        app: url-shortener
+    spec:
+      containers:
+      - name: url-shortener
+        image: url-shortener:latest
+        imagePullPolicy: Never  # For local development
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: DB_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: url-shortener-config
+              key: DB_HOST
+        - name: DB_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: url-shortener-config
+              key: DB_PORT
+        - name: DB_USER
+          valueFrom:
+            configMapKeyRef:
+              name: url-shortener-config
+              key: DB_USER
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: url-shortener-config
+              key: DB_NAME
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: url-shortener-secret
+              key: DB_PASSWORD
+        - name: REDIS_ADDR
+          valueFrom:
+            configMapKeyRef:
+              name: url-shortener-config
+              key: REDIS_ADDR
+        - name: REDIS_PASSWORD
+          valueFrom:
+            configMapKeyRef:
+              name: url-shortener-config
+              key: REDIS_PASSWORD
+        - name: REDIS_DB
+          valueFrom:
+            configMapKeyRef:
+              name: url-shortener-config
+              key: REDIS_DB
+        - name: PORT
+          valueFrom:
+            configMapKeyRef:
+              name: url-shortener-config
+              key: PORT
+        - name: GIN_MODE
+          valueFrom:
+            configMapKeyRef:
+              name: url-shortener-config
+              key: GIN_MODE
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 1
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: url-shortener-service
+  namespace: url-shortener
+spec:
+  selector:
+    app: url-shortener
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+  type: LoadBalancer
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: url-shortener-ingress
+  namespace: url-shortener
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: url-shortener.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: url-shortener-service
+            port:
+              number: 80 

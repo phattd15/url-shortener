@@ -1,0 +1,139 @@
+# Default values for url-shortener.
+# This is a YAML-formatted file.
+
+replicaCount: 3
+
+image:
+  repository: url-shortener
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+service:
+  type: LoadBalancer
+  port: 80
+  targetPort: 8080
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+  hosts:
+    - host: url-shortener.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Application configuration
+config:
+  port: 8080
+  ginMode: release
+  
+  database:
+    host: "postgres-master"
+    port: 5432
+    user: "postgres"
+    name: "urlshortener"
+    password: "password"
+  
+  redis:
+    addr: "redis-master:6379"
+    password: ""
+    db: 0
+
+# PostgreSQL configuration
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: "password"
+    database: "urlshortener"
+  architecture: replication
+  primary:
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+  readReplicas:
+    replicaCount: 2
+    persistence:
+      enabled: true
+      size: 10Gi
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+
+# Redis configuration
+redis:
+  enabled: true
+  architecture: replication
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+      size: 5Gi
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+  replica:
+    replicaCount: 2
+    persistence:
+      enabled: true
+      size: 5Gi
+    resources:
+      requests:
+        memory: "128Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m" 

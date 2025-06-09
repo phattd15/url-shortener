@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-slave
+  namespace: url-shortener
+spec:
+  serviceName: postgres-slave
+  replicas: 2
+  selector:
+    matchLabels:
+      app: postgres-slave
+  template:
+    metadata:
+      labels:
+        app: postgres-slave
+    spec:
+      initContainers:
+      - name: pg-basebackup
+        image: postgres:15
+        command:
+        - /bin/bash
+        - -c
+        - |
+          if [ -z "$(ls -A /var/lib/postgresql/data)" ]; then
+            echo "Starting base backup from master..."
+            PGPASSWORD='replicator_password' pg_basebackup -h postgres-master -D /var/lib/postgresql/data -U replicator -W -v -P -R
+            echo "standby_mode = 'on'" >> /var/lib/postgresql/data/recovery.conf
+            echo "primary_conninfo = 'host=postgres-master port=5432 user=replicator password=replicator_password'" >> /var/lib/postgresql/data/recovery.conf
+            echo "trigger_file = '/tmp/postgresql.trigger'" >> /var/lib/postgresql/data/recovery.conf
+          else
+            echo "Data directory not empty, skipping base backup"
+          fi
+        volumeMounts:
+        - name: postgres-slave-storage
+          mountPath: /var/lib/postgresql/data
+        env:
+        - name: PGUSER
+          value: postgres
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-master-secret
+              key: POSTGRES_PASSWORD
+      containers:
+      - name: postgres
+        image: postgres:15
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_USER
+          value: postgres
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-master-secret
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_DB
+          value: urlshortener
+        - name: PGUSER
+          value: postgres
+        volumeMounts:
+        - name: postgres-slave-storage
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U "postgres" -h 127.0.0.1 -p 5432
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          exec:
+            command:
+            - /bin/sh
+            - -c
+            - exec pg_isready -U "postgres" -h 127.0.0.1 -p 5432
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 1
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-slave-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-slave
+  namespace: url-shortener
+spec:
+  selector:
+    app: postgres-slave
+  ports:
+  - port: 5432
+    targetPort: 5432
+  type: ClusterIP 

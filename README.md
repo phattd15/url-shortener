@@ -27,37 +27,51 @@ A high-performance URL shortener service built with Go, Gin framework, PostgreSQ
 Once the service is running, you can access the interactive Swagger documentation at:
 - **Swagger UI**: http://localhost:8080/swagger/index.html
 
-## Quick Start
+## Deployment Options
 
-### Option 1: Using Make (Recommended for Development)
+### 🚀 Option 1: Kubernetes (Production-Ready)
+
+Deploy with PostgreSQL and Redis master-slave replicas on Kubernetes:
+
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd url-shortener
+# Quick setup with automated script
+./scripts/setup-k8s.sh setup
 
-# Complete development setup (installs tools, starts DB, generates docs)
-make dev-setup
-
-# Run the application
-make run
-
-# The service will be available at http://localhost:8080
-# Swagger docs at http://localhost:8080/swagger/index.html
+# Access at http://url-shortener.local
+# Add to /etc/hosts: 127.0.0.1 url-shortener.local
 ```
 
-### Option 2: Using Docker Compose (Full Stack)
-```bash
-# Clone the repository
-git clone <repository-url>
-cd url-shortener
+**Features:**
+- 3 application replicas with load balancing
+- PostgreSQL master + 2 slave replicas
+- Redis master + 2 slave replicas
+- NGINX ingress controller
+- Persistent storage
+- Auto-healing and scaling
 
+[📖 Full Kubernetes Setup Guide](k8s-setup.md)
+
+### 🐳 Option 2: Docker Compose (Simple)
+
+For development and testing:
+
+```bash
 # Start database, Redis, and application
 docker-compose up -d
 # or
 make docker-run
+```
 
-# The service will be available at http://localhost:8080
-# Swagger docs at http://localhost:8080/swagger/index.html
+### 💻 Option 3: Local Development
+
+Using Make commands:
+
+```bash
+# Complete development setup
+make dev-setup
+
+# Run the application
+make run
 ```
 
 ## Development Commands
@@ -76,13 +90,17 @@ make swagger-gen         # Regenerate Swagger docs
 
 # Database management
 make dev-db              # Start development database
-make stop-db             # Stop development database
+make dev-cache           # Start development cache
+make dev-services        # Start both database and cache
+make stop-services       # Stop all development services
 
 # Docker workflow
 make docker-build        # Build Docker image
 make docker-run          # Run with Docker Compose
 make docker-stop         # Stop Docker containers
 make logs                # View application logs
+make redis-logs          # View Redis logs
+make redis-cli           # Access Redis CLI
 
 # Build
 make build               # Build development binary
@@ -155,76 +173,6 @@ Health check status can be:
 - `degraded`: Database healthy but cache unavailable
 - `unhealthy`: Database unavailable (service non-functional)
 
-## Manual Setup
-
-### Prerequisites
-- Go 1.23 or higher
-- Docker and Docker Compose (for PostgreSQL and Redis)
-- PostgreSQL (if not using Docker)
-- Redis (optional, for caching)
-- Make (optional, for using Makefile commands)
-
-### 1. Clone and Install Dependencies
-```bash
-git clone <repository-url>
-cd url-shortener
-go mod tidy
-```
-
-### 2. Generate Swagger Documentation (if modified)
-```bash
-# Install swag CLI tool
-go install github.com/swaggo/swag/cmd/swag@latest
-
-# Generate docs
-swag init -g cmd/server/main.go
-```
-
-### 3. Start Services
-Using Docker Compose (recommended):
-```bash
-docker-compose up -d postgres redis
-```
-
-Or use your own services and set environment variables:
-```bash
-export DB_HOST=localhost
-export DB_PORT=5432
-export DB_USER=postgres
-export DB_PASSWORD=password
-export DB_NAME=urlshortener
-export REDIS_ADDR=localhost:6379
-export REDIS_PASSWORD=""
-export REDIS_DB=0
-```
-
-### 4. Run the Application
-```bash
-go run cmd/server/main.go
-```
-
-The server will start on `http://localhost:8080`
-
-### 5. Test the Service
-```bash
-# Create a short URL
-curl -X POST http://localhost:8080/shorten \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://github.com/gin-gonic/gin"}'
-
-# Test redirection (replace abc123 with actual short code)
-curl -L http://localhost:8080/abc123
-
-# Get statistics
-curl http://localhost:8080/stats/abc123
-
-# Check health
-curl http://localhost:8080/health
-
-# View API documentation
-open http://localhost:8080/swagger/index.html
-```
-
 ## Configuration
 
 Environment variables:
@@ -247,9 +195,8 @@ Environment variables:
 
 **Note**: If Redis is unavailable, the service will operate without caching, falling back to database-only operations.
 
-## Development
+## Project Structure
 
-### Project Structure
 ```
 url-shortener/
 ├── cmd/
@@ -269,14 +216,24 @@ url-shortener/
 │   └── url.go             # HTTP handlers with Swagger annotations
 ├── utils/
 │   └── shortener.go       # Utility functions
+├── manifests/              # Kubernetes manifests
+│   ├── namespace.yaml
+│   ├── postgres/           # PostgreSQL master-slave setup
+│   ├── redis/              # Redis master-slave setup
+│   └── app/                # Application deployment
+├── scripts/
+│   └── setup-k8s.sh       # Kubernetes setup automation
+├── helm/                   # Helm chart (alternative deployment)
 ├── go.mod                 # Go module file
 ├── Makefile               # Development commands
-├── docker-compose.yml     # Full stack setup
+├── docker-compose.yml     # Docker Compose setup
 ├── Dockerfile             # Application container
+├── k8s-setup.md           # Kubernetes deployment guide
 └── README.md              # This file
 ```
 
-### Database Schema
+## Database Schema
+
 The application uses GORM for database operations. The URL table includes:
 - `id`: Primary key
 - `original_url`: The original long URL
@@ -285,13 +242,14 @@ The application uses GORM for database operations. The URL table includes:
 - `expires_at`: Optional expiration timestamp
 - `created_at`, `updated_at`, `deleted_at`: GORM timestamps
 
-### Cache Strategy
+## Cache Strategy
+
 - **URL Mappings**: Cached for 24 hours
 - **Statistics**: Cached for 5 minutes
 - **Click Counts**: Real-time updates in cache, periodic sync to database
 - **Original URL Lookups**: Cached to avoid duplicate short codes
 
-### Adding New API Endpoints
+## Adding New API Endpoints
 
 1. Add handler function with Swagger annotations in `handlers/`
 2. Register route in `cmd/server/main.go`
@@ -309,40 +267,6 @@ Example Swagger annotations:
 // @Success 200 {object} ResponseType
 // @Failure 400 {object} map[string]string
 // @Router /endpoint [method]
-```
-
-## Deployment Options
-
-### Option 1: Docker Compose (Recommended)
-```bash
-# Full stack deployment with PostgreSQL and Redis
-make docker-run
-# or
-docker-compose up -d
-```
-
-### Option 2: Build and Run Manually
-```bash
-# Build binary
-make build
-# or
-go build -o url-shortener cmd/server/main.go
-
-# Run binary
-./bin/url-shortener
-```
-
-### Option 3: Docker Container Only
-```bash
-# Build image
-make docker-build
-
-# Run container (requires external PostgreSQL and Redis)
-docker run -p 8080:8080 \
-  -e DB_HOST=your-postgres-host \
-  -e DB_PASSWORD=your-password \
-  -e REDIS_ADDR=your-redis-host:6379 \
-  url-shortener
 ```
 
 ## Production Considerations
@@ -380,3 +304,32 @@ Alternatively, you can use the provided curl examples or any API testing tool li
 ## Monitoring
 
 The health check endpoint provides detailed status information about all service components, making it easy to integrate with monitoring systems like Prometheus, Datadog, or custom health check services.
+
+## Load Testing
+
+For Kubernetes deployments, you can easily perform load testing:
+
+```bash
+# Test URL creation
+ab -n 1000 -c 10 -T 'application/json' \
+  -p <(echo '{"url": "https://example.com/test"}') \
+  http://url-shortener.local/shorten
+
+# Test redirection
+ab -n 1000 -c 10 http://url-shortener.local/abc123
+```
+
+## Scaling
+
+With Kubernetes deployment, you can easily scale components:
+
+```bash
+# Scale application
+kubectl scale deployment url-shortener --replicas=5 -n url-shortener
+
+# Scale Redis slaves
+kubectl scale statefulset redis-slave --replicas=3 -n url-shortener
+
+# Scale PostgreSQL slaves
+kubectl scale statefulset postgres-slave --replicas=3 -n url-shortener
+```
